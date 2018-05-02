@@ -3,6 +3,10 @@ import cv2 as cv
 import socket 
 from matplotlib import pyplot as plt
 import pickle
+import itertools
+import csv
+import json
+
 cap=cv.VideoCapture(0)
 
 
@@ -18,8 +22,13 @@ plt.show()
 
 while True:
    
-    c= str.encode(frame.encoding)
-    s.sendall(c)
+    # c= str.encode(frame.encoding)
+   
+    ar = json.loads(frame)
+
+    with open("output.csv", "wb") as f:
+        writer = csv.writer(f)
+        writer.writerows(ar)
     data = s.recv(1024)
     
     print ("Received", repr(data))
