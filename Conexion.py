@@ -1,81 +1,112 @@
+"""
+inicializar este script primero, y luego abrir camera_stream en el pi
+se
+"""
 import io
 import os
-import random
 import socket
-# noinspection PyCompatibility
 import struct
 import subprocess
+import argparse
+import imutils
 import cv2
 import numpy as np
+import pygame
+from pygame.locals import *
+from panorama import Stitcher
 
-#from picamera import PiCamera
-#from picamera.array import PiRGBArray
-#instanciamos un objeto para trabajar con el socket
+class CameraTest(object):
+    def __init__(self):
 
-server_ip = '192.168.1.202'
-if b"Fede Android" in subprocess.check_output("netsh wlan show interfaces"):
-    server_ip = '192.168.1.202'
-print("Inicializando stream...")
-sock = socket.socket()
+        self.server_socket = socket.socket()
+        print("Inicializando stream...")
+        global server_ip
+        self.server_socket.bind(("", 9999))
+        self.server_socket.listen()
+        print("Esperando conexion...")
+        # bandera para el while
+        self.corriendo_programa = True
 
-sock.bind(("",9999))
-sock.listen(1)
+        # creando conexion para enviar datos
+        self.connection, self.client_address = self.server_socket.accept()
+        self.connection = self.connection.makefile('rb')
+        print("Conexion establecida!")
 
-sc, addr = sock.accept()
-sc= sc.makefile('rb')
-print("Connected by", addr)
-while True:
+        pygame.init()
+        self.open_stream()
 
-    # Read the length of the image as a 32-bit unsigned int. If the
-    # length is zero, quit the loop
-    image_len = struct.unpack('<L', sc.read(struct.calcsize('<L')))[0]
-    if not image_len:
-        print('Finalizado por Cliente')
-        break
-    # Construct a stream to hold the image data and read the image
-    # data from the connection
-    image_stream = io.BytesIO()
-    image_stream.write(sc.read(image_len))
+    def open_stream(self):
 
-    image_stream.seek(0)
+        total_frame = 0
+        # colecionando imagenes para el stream
+        print('Iniciando streaming de la camara en: ', self.client_address)
+        e1 = cv2.getTickCount()
 
-    jpg = image_stream.read()
-    roi = cv2.imdecode(np.fromstring(jpg, dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
-    # region es Y, X        roi = roi[120:240, :]
-    # mostrar la imagen
-    cv2.imshow('Computer Vision', roi)
+        # obtener las imagenes del stream una por una
+        try:
+            myfont = pygame.font.SysFont("monospace", 15)
+            screen = pygame.display.set_mode((200, 200), 0, 24)
+            label = myfont.render("Presione q o x para finalizar\n el programa.", 1, (255, 255, 0))
+            screen.blit(label, (0, 0))
+            pygame.display.flip()
+            cam = cv2.VideoCapture()
+            while self.corriendo_programa:
+                # Read the length of the image as a 32-bit unsigned int. If the
+                # length is zero, quit the loop
+                image_len = struct.unpack('<L', self.connection.read(struct.calcsize('<L')))[0]
+                if not image_len:
+                    print('Finalizado por Cliente')
+                    break
+                # Construct a stream to hold the image data and read the image
+                # data from the connection
+                image_stream = io.BytesIO()
+                image_stream.write(self.connection.read(image_len))
 
-    # data = sc.recv(1024)
+                image_stream.seek(0)
 
-    # if not data: break
-    # cv.imshow("RECIBIDO",data)
-    # sc.sendall(data)
-    
-    # if cv.waitKey(1) & 0xFF == ord ('q'):break
-        
-    
-sc.close()
+                jpg = image_stream.read()
+                image = cv2.imdecode(np.fromstring(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                image = cv2.rectangle(image, (0, 120), (318, 238), (30, 230, 30), 1)
 
- 
-# while True:
-   
-#     #Recibimos el mensaje, con el metodo recv recibimos datos y como parametro 
-#     #la cantidad de bytes para recibir
-   
-   
-#     recibido = sock.rec(1024)
-#     # cv.imshow('Recibido', sc)
-#     sock.send(recibido)
-#     #Si el mensaje recibido es la palabra q se cierra la aplicacion
-#     if cv.waitKey(1) & 0xFF == ord ('q'):
-#         break
- 
-#     #Si se reciben datos nos muestra la IP y el mensaje recibido
-#     print (" dice: ", recibido)
- 
-  
-# print ("Adios.")
- 
-# #Cerramos la instancia del socket cliente y servidor
-# sc.close()
-# sock.close()
+                # image = cv2.flip(image, -1)
+
+                # guardar la imagen
+                cv2.imwrite('streamtest_img/frame{:>05}.jpg'.format(total_frame), image)
+                # mostrar la imagen
+
+                imageA = imutils.resize(image, width=400)
+                imageB = imutils.resize(cam, width=400)
+
+                stitcher = Stitcher()
+                (result, vis) = stitcher.stitch([imageA, imageB], showMatches=True)
+                cv2.imshow('Computer Vision', result)
+
+                total_frame += 1
+                screen.blit(myfont.render(("Total Frames: " + str(total_frame)), 1, (255, 255, 0), (0, 0, 0)), (60, 0))
+                for event in pygame.event.get():
+                    if event.type == KEYDOWN:
+                        key_input = pygame.key.get_pressed()
+                        if key_input[pygame.K_x] or key_input[pygame.K_q]:
+                            print("Deteniendo el stream")
+                            self.corriendo_programa = False
+                            break
+
+            e2 = cv2.getTickCount()
+            # calcular el total de streaming
+            time0 = (e2 - e1) / cv2.getTickFrequency()
+            print("Duracion del streaming:", time0)
+            print('Total cuadros   : ', total_frame)
+        finally:
+
+            pygame.quit()
+            self.connection.close()
+            self.server_socket.close()
+            cv2.destroyAllWindows()
+            os.system("pause")
+
+
+if __name__ == '__main__':
+    server_ip = '172.27.12.58'
+    if b"Fede Android" in subprocess.check_output("netsh wlan show interfaces"):
+        server_ip =  '172.27.12.58'
+    CameraTest()

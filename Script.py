@@ -1,44 +1,48 @@
-import numpy as np 
-import cv2 as cv
-import socket 
-from matplotlib import pyplot as plt
-import pickle
-import itertools
-import csv
-import json
+import io
+import socket
+import struct
+import subprocess
+import time
 
-cap=cv.VideoCapture(0)
+import picamera
 
+# Se crea e inicializa un zocalo de cliente para enviar los datos
+client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+print('Esperando conexion de video..')
+server_ip = '192.168.0.13'
+if b"Fede Android" in subprocess.check_output(["iwlist", "wlan0", "scan"]):
+    server_ip = '192.168.43.59'
+client_socket.connect((server_ip, 9999))
+print('Conexion establecida')
+connection = client_socket.makefile('wb')
 
-# s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-# s.connect(('127.0.0.1',9999))
+try:
+    with picamera.PiCamera() as camera:
+        # resolucion de la camara, cuadros por segundo
+        camera.resolution = (320, 240)
+        camera.framerate = 10
+        # se duerme por 2 segundos para inicializar
+        time.sleep(1)
+        stream = io.BytesIO()  # envio de datos por bytes IO
 
-rest, frame =cap.read()
+        # envio de video formato JPEG
+        for _ in camera.capture_continuous(stream, 'jpeg', use_video_port=True):
+            # Enviar el tamaño de la imagen a ser envia y flushear para asegurar el envio
+            connection.write(struct.pack('<L', stream.tell()))
+            connection.flush()
+            # rebobinar la imagen y enviarla como tal
+            stream.seek(0)
+            connection.write(stream.read())
+            # situar al stream en una nueva posicion para la proxima captura
+            stream.seek(0)
+            stream.truncate()
+    # Enviar una señal de datos igual a 0 para contar que ya se acabo el stream
+    connection.write(struct.pack('<L', 0))
 
-print(frame)
-pickle.dumps(frame)
-plt.imshow(frame, interpolation='nearest')
-plt.show()
+except IOError:
+    print('Servidor del stream finalizo la conexion')
+finally:
+    connection.close()
+    client_socket.close()
 
-while True:
-   
-    # c= str.encode(frame.encoding)
-   
-    ar = json.loads(frame)
-
-    with open("output.csv", "wb") as f:
-        writer = csv.writer(f)
-        writer.writerows(ar)
-    data = s.recv(1024)
-    
-    print ("Received", repr(data))
-    if cv.waitKey(1) & 0xFF == ord ('q'): break
-   
-s.close()
-
-
-
-#
-# s.close()
-# cap.release()
-# cv.destroyAllWindows()
+__author__ = 'federico_peralta'

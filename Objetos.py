@@ -11,9 +11,11 @@ while(True):
     mascara = cv2.inRange(frame,rangomin,rangomax)
     opening = cv2.morphologyEx(mascara, cv2.MORPH_OPEN, kernel)
     x,y,w,h = cv2.boundingRect(opening)
+    
     cv2.rectangle(frame, (x,y),(x+w,y+h),(0,255,0),3)
     cv2.circle(frame,(int(x+w/2),int(y+h/2)),5,(0,0,255),-1)
+    
     k = cv2.waitKey(1) & 0xFF
     cv2.imshow('camara',frame)
-    if k==27:
+    if k=='q':
         break
